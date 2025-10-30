@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Vertical Stepwise Calculator</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="calculator-root">
+    <header>
+      <h1>直式分步計算機</h1>
+    </header>
+
+    <section class="display-stack" aria-live="polite">
+      <div id="step-list" class="step-list" role="list"></div>
+      <div id="current-line" class="current-line">0</div>
+    </section>
+
+    <section class="pad" aria-label="鍵盤">
+      <div class="row">
+        <button data-key="7">7</button>
+        <button data-key="8">8</button>
+        <button data-key="9">9</button>
+        <button data-op="/">÷</button>
+      </div>
+      <div class="row">
+        <button data-key="4">4</button>
+        <button data-key="5">5</button>
+        <button data-key="6">6</button>
+        <button data-op="*">×</button>
+      </div>
+      <div class="row">
+        <button data-key="1">1</button>
+        <button data-key="2">2</button>
+        <button data-key="3">3</button>
+        <button data-op="-">−</button>
+      </div>
+      <div class="row">
+        <button data-key="0">0</button>
+        <button data-key=".">.</button>
+        <button id="equals">=</button>
+        <button data-op="+">+</button>
+      </div>
+    </section>
+
+    <section class="controls">
+      <button id="export-svg">匯出 SVG</button>
+      <button id="export-png">匯出 PNG (高解析)</button>
+      <button id="clear">清除</button>
+    </section>
+
+    <div id="download-link" style="display:none"></div>
+  </main>
+
+  <script type="module" src="./src/app.js"></script>
+</body>
+</html>
