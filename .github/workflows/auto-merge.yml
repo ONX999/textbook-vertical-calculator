@@ -1,0 +1,154 @@
+name: Auto Merge
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  pull_request_review:
+    types: [submitted]
+  check_suite:
+    types: [completed]
+  status: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if PR should be auto-merged
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            // Get PR details
+            let pullNumber;
+            if (context.eventName === 'pull_request' || context.eventName === 'pull_request_review') {
+              pullNumber = context.payload.pull_request.number;
+            } else {
+              // For check_suite and status events, find the associated PR
+              const prs = await github.rest.pulls.list({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'open',
+                head: `${context.repo.owner}:${context.payload.check_suite?.head_branch || context.payload.branches?.[0]?.name}`,
+              });
+              if (prs.data.length === 0) {
+                console.log('No open PR found for this event');
+                return;
+              }
+              pullNumber = prs.data[0].number;
+            }
+
+            const { data: pullRequest } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pullNumber,
+            });
+
+            console.log(`Checking PR #${pullNumber} for auto-merge eligibility`);
+
+            // Check if PR has auto-merge label
+            const hasAutoMergeLabel = pullRequest.labels.some(label => 
+              label.name === 'auto-merge' || label.name === 'automerge'
+            );
+
+            // Check if PR is from dependabot
+            const isDependabot = pullRequest.user.login === 'dependabot[bot]';
+
+            // Check if PR title contains auto-merge indicator
+            const titleHasAutoMerge = pullRequest.title.toLowerCase().includes('[auto-merge]');
+
+            if (!hasAutoMergeLabel && !isDependabot && !titleHasAutoMerge) {
+              console.log('PR is not marked for auto-merge');
+              return;
+            }
+
+            // Check if all required checks have passed
+            const { data: reviews } = await github.rest.pulls.listReviews({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pullNumber,
+            });
+
+            const approvedReviews = reviews.filter(review => review.state === 'APPROVED');
+            const changesRequestedReviews = reviews.filter(review => review.state === 'CHANGES_REQUESTED');
+
+            // Get commit status
+            const { data: commitStatus } = await github.rest.repos.getCombinedStatusForRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: pullRequest.head.sha,
+            });
+
+            // Get check runs
+            const { data: checkRuns } = await github.rest.checks.listForRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: pullRequest.head.sha,
+            });
+
+            const allChecksPassed = commitStatus.state === 'success' || commitStatus.statuses.length === 0;
+            const allCheckRunsPassed = checkRuns.check_runs.every(run => 
+              run.status === 'completed' && (run.conclusion === 'success' || run.conclusion === 'neutral' || run.conclusion === 'skipped')
+            ) || checkRuns.check_runs.length === 0;
+
+            console.log(`Checks status: commits=${commitStatus.state}, check_runs=${allCheckRunsPassed}`);
+            console.log(`Reviews: ${approvedReviews.length} approved, ${changesRequestedReviews.length} changes requested`);
+
+            // Conditions for auto-merge:
+            // 1. At least one approval OR it's from dependabot
+            // 2. No changes requested
+            // 3. All checks passed (if any exist)
+            // 4. Not a draft PR
+            const canMerge = (
+              (approvedReviews.length > 0 || isDependabot) &&
+              changesRequestedReviews.length === 0 &&
+              allChecksPassed &&
+              allCheckRunsPassed &&
+              !pullRequest.draft
+            );
+
+            if (canMerge) {
+              console.log('All conditions met, proceeding with auto-merge');
+              
+              try {
+                await github.rest.pulls.merge({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: pullNumber,
+                  merge_method: 'squash', // Can be 'merge', 'squash', or 'rebase'
+                  commit_title: `${pullRequest.title} (#${pullNumber})`,
+                  commit_message: `Auto-merged by GitHub Actions\n\n${pullRequest.body || ''}`,
+                });
+
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pullNumber,
+                  body: '✅ This PR has been automatically merged.',
+                });
+
+                console.log('PR merged successfully');
+              } catch (error) {
+                console.error('Failed to merge PR:', error.message);
+                
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pullNumber,
+                  body: `⚠️ Auto-merge failed: ${error.message}`,
+                });
+              }
+            } else {
+              console.log('Conditions not met for auto-merge');
+              const reasons = [];
+              if (pullRequest.draft) reasons.push('PR is a draft');
+              if (approvedReviews.length === 0 && !isDependabot) reasons.push('No approvals');
+              if (changesRequestedReviews.length > 0) reasons.push('Changes requested');
+              if (!allChecksPassed) reasons.push('Some commit checks failed');
+              if (!allCheckRunsPassed) reasons.push('Some check runs failed');
+              
+              console.log('Reasons:', reasons.join(', '));
+            }
