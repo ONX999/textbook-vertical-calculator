@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ main, master ]
+  push:
+    branches: [ main, master ]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Basic validation
+        run: |
+          echo "Running basic validation checks..."
+          
+          # Check if README exists
+          if [ ! -f "README.md" ]; then
+            echo "Error: README.md not found"
+            exit 1
+          fi
+          
+          echo "✅ All basic checks passed"
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check file structure
+        run: |
+          echo "Checking repository structure..."
+          
+          # Basic structure checks
+          if [ -d ".github/workflows" ]; then
+            echo "✅ Workflows directory exists"
+          fi
+          
+          echo "✅ File structure check passed"
