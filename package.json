@@ -1,0 +1,11 @@
+{
+  "name": "vertical-stepwise-calculator",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "npx http-server . -p 8080 --silent",
+    "build": "echo no-build-step",
+    "test": "echo no-tests-configured"
+  },
+  "devDependencies": {}
+}
